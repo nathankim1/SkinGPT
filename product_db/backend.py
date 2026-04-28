@@ -5,7 +5,7 @@ import os
 from tqdm import tqdm  # <--- THE MAGIC PROGRESS BAR
 
 # 1. Configuration
-MODEL_NAME = 'llama3.1' 
+MODEL_NAME = 'llama3.1:latest' 
 save_file = 'dataset/raw_llm_classifications.json'
 
 # 2. Load your pristine Master List
@@ -33,7 +33,7 @@ if len(ingredients_to_process) == 0:
 def get_prompt(ingredient_chunk):
     return f"""
     You are an expert cosmetic chemist. Evaluate the following skincare ingredients. 
-    Classify their efficacy against 5 conditions: "acne", "hyperpigmentation", "dryness", "wrinkles", and "eyebags".
+    Classify their efficacy against 6 conditions: "acne", "blackheads", "dark_spots", "pores", "wrinkles", "eyebags".
     
     You MUST use EXACTLY one of these four categories for every condition:
     - PRIMARY_TREATMENT

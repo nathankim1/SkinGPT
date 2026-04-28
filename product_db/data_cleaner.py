@@ -70,7 +70,7 @@ def clean_ingredients(ingredient_data):
             cleaned_list.append(clean_item)
             
     return cleaned_list
-
+    
 # --- Execution ---
 
 # Load your dataset
