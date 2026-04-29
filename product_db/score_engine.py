@@ -54,25 +54,65 @@ def get_vector_lookup():
     return lookup
 
 def calculate_efficacy_vector(ingredients, vector_lookup):
-    """Sums the ingredient vectors into a single product efficacy vector."""
-    # Start with a zero vector of length 6
-    product_vector = np.zeros(len(CONDITIONS_ORDER))
-    
+    """
+    Implements Hybrid Pooling:
+    - Composite (Max + Min) for Acne & Blackheads
+    - Max Pooling for everything else
+    """
+    # 1. Collect vectors for all recognized ingredients
+    ing_vectors = []
     for ing in ingredients:
         ing_clean = ing.lower().strip()
         if ing_clean in vector_lookup:
-            product_vector += vector_lookup[ing_clean]
+            ing_vectors.append(vector_lookup[ing_clean])
+    
+    # If no ingredients are recognized, return a neutral zero vector
+    if not ing_vectors:
+        return [0.0] * len(CONDITIONS_ORDER)
+    
+    # 2. Convert to a 2D matrix (Rows = Ingredients, Cols = Conditions)
+    matrix = np.array(ing_vectors)
+    final_vector = np.zeros(len(CONDITIONS_ORDER))
+    
+    # 3. Apply pooling logic across each condition (column)
+    for i in range(len(CONDITIONS_ORDER)):
+        col_data = matrix[:, i]
+        
+        if i < 2: # ACNE & BLACKHEADS (Composite Pooling)
+            # Net score = Strongest Positive + Strongest Negative
+            final_vector[i] = np.max(col_data) + np.min(col_data)
+        else: # EVERYTHING ELSE (Max Pooling)
+            # Score = The single most effective ingredient
+            final_vector[i] = np.max(col_data)
             
-    return product_vector.tolist() # Store as list in CSV for easy serialization
+    return final_vector.tolist()
 
-def find_product_conflicts(ingredients):
-    """Identifies what a product CONFLICTS with."""
-    conflicts = set()
+def extract_actives_and_conflicts(ingredients):
+    """
+    Uses substring matching to identify matrix actives hidden inside messy strings
+    (e.g., 'salicylic acid 2%' -> recognized_active: 'salicylic_acid')
+    """
+    recognized_actives = set()
+    conflict_tags = set()
+    
+    # Handle NaN or empty values safely
+    if not isinstance(ingredients, list):
+        return pd.Series([[], []])
+    
     for ing in ingredients:
-        normalized_ing = ing.lower().strip().replace(" ", "_")
-        if normalized_ing in MASTER_MATRIX:
-            conflicts.update(MASTER_MATRIX[normalized_ing])
-    return list(conflicts)
+        ing_clean = ing.lower()
+        
+        # Check every known active in our Master Matrix
+        for active_key, enemies in MASTER_MATRIX.items():
+            # Convert 'salicylic_acid' -> 'salicylic acid' to search the raw string
+            search_string = active_key.replace("_", " ") 
+            
+            # Substring Match!
+            if search_string in ing_clean:
+                recognized_actives.add(active_key)
+                conflict_tags.update(enemies)
+                
+    return pd.Series([list(recognized_actives), list(conflict_tags)])
 def price_tier(price):
     if price<20:
         return "Budget"
@@ -82,6 +122,43 @@ def price_tier(price):
         return "Premium"
     else:
         return "Luxury"
+    
+def assign_routine_step(row):
+    secondary = str(row.get('secondary_category', '')).strip()
+    tertiary = str(row.get('tertiary_category', '')).strip()
+    
+    # ---------------------------------------------------------
+    # 1. CLEANSERS
+    # Captures: Face Washes, Toners, Exfoliators, Makeup Removers
+    # Excludes: Blotting Papers
+    # ---------------------------------------------------------
+    if secondary == 'Cleansers':
+        if tertiary == 'Blotting Papers':
+            return 'Exclude'
+        return 'Cleanser'
+        
+    # ---------------------------------------------------------
+    # 2. TREATMENTS
+    # Captures: Serums, Peels, Acne Spot Treatments
+    # ---------------------------------------------------------
+    elif secondary == 'Treatments':
+        return 'Treatment'
+        
+    # ---------------------------------------------------------
+    # 3. MOISTURIZERS
+    # Captures: Standard moisturizers, Oils, Night Creams, Essences
+    # Excludes: BB & CC Creams (Makeup hybrids)
+    # ---------------------------------------------------------
+    elif secondary == 'Moisturizers':
+        if tertiary in ['BB & CC Creams']:
+            return 'Exclude'
+        return 'Moisturizer'
+        
+    # ---------------------------------------------------------
+    # 4. EXCLUSIONS (The "Noise")
+    # Excludes: Eye creams, Sunscreens, Masks, Lip balms, Tools, Self-Tanners
+    # ---------------------------------------------------------
+    return 'Exclude'
 # ==========================================
 # 3. EXECUTION
 # ==========================================
@@ -98,9 +175,10 @@ if isinstance(df['clean_ingredient_array'].iloc[0], str):
 df['efficacy_vector'] = df['clean_ingredient_array'].apply(lambda x: calculate_efficacy_vector(x, vector_db))
 
 # (Keep your existing conflict logic as well)
-df['conflict_tags'] = df['clean_ingredient_array'].apply(find_product_conflicts)
+df[['recognized_actives', 'conflict_tags']] = df['clean_ingredient_array'].apply(extract_actives_and_conflicts)
 
 df['price_tier'] = df['price_usd'].apply(price_tier)
+df['routine_step'] = df.apply(assign_routine_step, axis=1)
 df.to_csv(OUTPUT_CSV, index=False)
 print(f"✅ Success! Database enriched with 'efficacy_vector' column.")
 
