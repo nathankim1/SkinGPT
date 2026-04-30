@@ -36,12 +36,16 @@ def preprocess_image(image):
     return transform(image).unsqueeze(0) # Add batch dimension
 
 # --- STREAMLIT UI ---
-st.title("Skincare Analysis: Model Integration")
-st.write("Upload a photo to generate your Condition Vector.")
+st.title("Skincare Analysis & Product Matching with SkinGPT")
+st.write("Select your budget and upload a photo to analyze your skin condition below.")
+st.markdown("---")
 
 # Load model once
 model = load_model()
 classes = ['Acne', 'Eyebags', 'Hyperpigmentation', 'Wrinkles', 'Dryness']
+
+# Budget selector moved above the uploader so users can set it before analysis
+price_tier = st.selectbox("Select Your Budget", ["Budget", "Mid-Range", "Premium", "Luxury"])
 
 uploaded_file = st.file_uploader("Upload Skin Image", type=['jpg', 'png', 'jpeg'])
 
@@ -59,13 +63,17 @@ if uploaded_file:
                 output_vector = model(input_tensor)[0].tolist()
             
             # C. Output Vector Results
-            st.subheader("Generated Condition Vector")
-            st.json(dict(zip(classes, output_vector)))
+            st.markdown("---")
+            st.subheader("Skin Condition Scores")
             
-            # Visualizing the vector for the team
-            st.bar_chart(dict(zip(classes, output_vector)))
+            # Display scores in columns for cleaner presentation
+            cols = st.columns(len(classes))
+            for col, condition, score in zip(cols, classes, output_vector):
+                with col:
+                    st.metric(condition, f"{score:.2f}")
             
             # D. PRODUCT MATCHING ALGORITHM
+            st.markdown("---")
             st.subheader("Personalized Skincare Recommendations")
             
             # Append 0 for eyebags (not detected by model)
@@ -80,10 +88,7 @@ if uploaded_file:
                     # Initialize the matching engine
                     engine = SkincareMatchingEngine(str(db_path))
                     
-                    # Get price tier from user
-                    price_tier = st.selectbox("Select Your Budget", ["Budget", "Mid-Range", "Premium", "Luxury"])
-                    
-                    # Run the matching algorithm
+                    # Run the matching algorithm using the budget selected above
                     routine = engine.build_routine(user_vector, price_tier)
                     
                     # Display Results
@@ -91,18 +96,37 @@ if uploaded_file:
                         # Error message returned by the engine
                         st.warning(routine)
                     else:
-                        st.success("✅ Routine generated successfully!")
+                        # Render each routine step as an inline card (no dropdowns)
                         for step, product in routine.items():
-                            with st.expander(f"🟩 {step}"):
-                                if isinstance(product, dict):
-                                    st.metric("Product Name", product.get('product_name', 'Unknown'))
-                                    col1, col2, col3 = st.columns(3)
-                                    col1.metric("Brand", product.get('brand_name', 'Unknown'))
-                                    col2.metric("Price", f"${product.get('price_usd', 0.0):.2f}")
-                                    col3.metric("Rating", f"{product.get('rating', 0.0):.1f}/5.0")
-                                    st.metric("Match Score", f"{product.get('match_percent', 0.0):.1f}%")
-                                    st.write(f"**Active Ingredients:** {', '.join(product.get('clean_ingredient_array', [])[:5])}")
-                                else:
-                                    st.write(product)
+                            st.write(f"### {step}")
+                            if isinstance(product, dict):
+                                # Row layout: stack fields vertically for readability
+                                product_name = product.get('product_name', 'Unknown')
+                                brand_name = product.get('brand_name', 'Unknown')
+                                price = product.get('price_usd', 0.0)
+                                rating = product.get('rating', 0.0)
+                                match_pct = product.get('match_percent', 0.0)
+                                actives_list = product.get('clean_ingredient_array', []) or []
+
+                                # Name and brand (prominent)
+                                st.markdown(f"<div style='font-size:20px; font-weight:700'>{product_name}</div>", unsafe_allow_html=True)
+                                st.markdown(f"<div style='font-size:15px; color:#444; margin-bottom:6px'>By {brand_name}</div>", unsafe_allow_html=True)
+
+                                # Price / Rating / Match as a single row of small metrics
+                                cols = st.columns([1,1,1])
+                                cols[0].metric("Price", f"${price:.2f}")
+                                cols[1].metric("Rating", f"{rating:.1f}/5.0")
+                                cols[2].metric("Match", f"{match_pct:.1f}%")
+
+                                # Active ingredients on its own row
+                                actives = ', '.join(actives_list)
+                                if len(actives) > 300:
+                                    actives = actives[:300].rsplit(',', 1)[0] + '...'
+                                st.write(f"**Active Ingredients:** {actives}")
+
+                                # Separator between products
+                                st.markdown("---")
+                            else:
+                                st.write(product)
                 except Exception as e:
                     st.error(f"❌ Error running matching algorithm: {e}")
