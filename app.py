@@ -42,7 +42,7 @@ st.markdown("---")
 
 # Load model once
 model = load_model()
-classes = ['Acne', 'Eyebags', 'Hyperpigmentation', 'Wrinkles', 'Dryness']
+classes = ['Acne', 'Blackheads', 'Dark Spots', 'Pores', 'Wrinkles']  # Class order must match training labels
 
 # Budget selector moved above the uploader so users can set it before analysis
 price_tier = st.selectbox("Select Your Budget", ["Budget", "Mid-Range", "Premium", "Luxury"])
